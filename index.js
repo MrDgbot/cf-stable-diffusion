@@ -33,7 +33,9 @@ export default {
             prompt: prompt
         };
 
-        const buffer = await ai.run('@cf/stabilityai/stable-diffusion-xl-base-1.0', inputs);
+        const buffer = await retryOnError(async () => {
+            return await ai.run('@cf/stabilityai/stable-diffusion-xl-base-1.0', inputs);
+        });
 
         const formData = new FormData();
 
@@ -41,9 +43,11 @@ export default {
 
         formData.append('file', file);
 
-        const uploadResponse = await fetch('https://cdn.ipfsscan.io/api/v0/add?pin=false', {
-            method: 'POST',
-            body: formData
+        const uploadResponse = await retryOnError(async () => {
+            return await fetch('https://cdn.ipfsscan.io/api/v0/add?pin=false', {
+                method: 'POST',
+                body: formData
+            });
         });
 
         const uploadResult = await uploadResponse.json();
@@ -60,9 +64,27 @@ export default {
         };
 
         return new Response(JSON.stringify(responseBody), {
+            status: 200, // 添加 200 状态码
             headers: {
                 'content-type': 'application/json'
             }
         });
     }
 };
+
+async function retryOnError(fn, retries = 1, timeout = 60000) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            return await Promise.race([
+                fn(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout')), timeout)
+                )
+            ]);
+        } catch (error) {
+            if (i === retries) {
+                throw error;
+            }
+        }
+    }
+}
